@@ -1,6 +1,6 @@
-# This is a basic workflow to help you get started with Actions
+# Streamlit App CI/CD Pipeline with Security Best Practices
 
-name: CI
+name: Deploy Streamlit App to AWS
 
 # Controls when the workflow will run
 on:
@@ -13,24 +13,131 @@ on:
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
+# Security: Limit permissions to minimum required
+permissions:
+  contents: read
+  id-token: write # Required for OIDC
+
+# Environment variables
+env:
+  AWS_REGION: us-east-1
+  EC2_INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }} # You'll need to add this secret
+
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
-  # This workflow contains a single job called "build"
-  build:
-    # The type of runner that the job will run on
+  # Quality checks job
+  quality-checks:
     runs-on: ubuntu-latest
-
-    # Steps represent a sequence of tasks that will be executed as part of the job
+    
     steps:
-      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-      - uses: actions/checkout@v4
+      # Checks-out your repository under $GITHUB_WORKSPACE
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      # Runs a single command using the runners shell
-      - name: Run a one-line script
-        run: echo Hello, world!
+      # Set up Python environment
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
 
-      # Runs a set of commands using the runners shell
-      - name: Run a multi-line script
-        run: streamlit run app.py
-          echo Add other actions to build,
-          echo test, and deploy your project.
+      # Install dependencies
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install flake8 pytest safety bandit
+
+      # Linting with flake8
+      - name: Lint with flake8
+        run: |
+          # Stop the build if there are Python syntax errors or undefined names
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          # Exit-zero treats all errors as warnings
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+      # Security scanning with bandit
+      - name: Security scan with bandit
+        run: |
+          bandit -r . -f json -o bandit-report.json || true
+          bandit -r . --severity-level medium
+
+      # Check for known security vulnerabilities
+      - name: Safety check for vulnerabilities
+        run: |
+          safety check --json --output safety-report.json || true
+          safety check
+
+      # Test the app (basic import test)
+      - name: Test app imports
+        run: |
+          python -c "import streamlit; import os; from dotenv import load_dotenv; from st_files_connection import FilesConnection; print('All imports successful!')"
+
+  # Deploy job (only runs after quality checks pass)
+  deploy:
+    needs: quality-checks
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+      # Checks-out your repository
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Configure AWS credentials using OIDC (more secure than long-term keys)
+      - name: Configure AWS credentials with OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }} # You'll need to create this
+          role-session-name: GitHubActions-StreamlitDeploy
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Alternative: Use traditional secrets if OIDC is not set up yet
+      # - name: Configure AWS credentials (fallback)
+      #   uses: aws-actions/configure-aws-credentials@v4
+      #   with:
+      #     aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      #     aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      #     aws-region: ${{ env.AWS_REGION }}
+
+      # Set up Python environment
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      # Install dependencies
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Deploy to EC2 using Systems Manager (more secure than SSH)
+      - name: Deploy to EC2
+        run: |
+          # Send commands to EC2 instance via SSM
+          aws ssm send-command \
+            --instance-ids ${{ env.EC2_INSTANCE_ID }} \
+            --document-name "AWS-RunShellScript" \
+            --parameters 'commands=[
+              "sudo apt-get update",
+              "sudo apt-get install -y python3 python3-pip python3-venv git",
+              "cd /home/ubuntu",
+              "git clone https://github.com/${{ github.repository }}.git streamlit-app || (cd streamlit-app && git pull)",
+              "cd streamlit-app",
+              "python3 -m venv venv || true",
+              "source venv/bin/activate",
+              "pip install --upgrade pip",
+              "pip install -r requirements.txt",
+              "pkill -f streamlit || true",
+              "nohup streamlit run app.py --server.port 8501 --server.address 0.0.0.0 > streamlit.log 2>&1 &",
+              "echo \"Streamlit app deployed successfully!\""
+            ]' \
+            --region ${{ env.AWS_REGION }}
+
+      # Health check
+      - name: Health check
+        run: |
+          echo "Deployment completed. App should be available at your EC2 public IP on port 8501"
+          echo "Example: http://YOUR_EC2_PUBLIC_IP:8501"
