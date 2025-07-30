@@ -42,31 +42,11 @@ Enlace al repositorio público
 Veremos la última hora de modificación, si está editado a destiempo, descalificaaaaaaaaaaaaaaaad@.
  
 📊 Rúbrica de Evaluación (100 puntos + 20 Bonus)
-Criterio
-	
-Puntos
 
-
-CI/CD Pipeline funcional con GitHub Actions
-	
-30
-
-
-Despliegue exitoso en AWS (S3 o EC2)
-	
-30
-
-
-Implementación de buenas prácticas de seguridad
-	
-25
-
-
-Claridad del README.md y evidencias
-	
-15
-
-
-Bonus: Calidad del código (linting, pruebas, escaneo, OTRO)
-	
-20
+| Criterio | Puntos |
+|----------|--------|
+| CI/CD Pipeline funcional con GitHub Actions | 30 |
+| Despliegue exitoso en AWS (S3 o EC2) | 30 |
+| Implementación de buenas prácticas de seguridad | 25 |
+| Claridad del README.md y evidencias | 15 |
+| **Bonus:** Calidad del código (linting, pruebas, escaneo, OTRO) | 20 |
