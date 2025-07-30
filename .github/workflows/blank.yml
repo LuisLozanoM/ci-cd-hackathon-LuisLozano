@@ -90,7 +90,7 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }} # You'll need to create this
           role-session-name: GitHubActions-StreamlitDeploy
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: ${{ env.AWS_DEFAULT_REGION }}
 
       # Alternative: Use traditional secrets if OIDC is not set up yet
       # - name: Configure AWS credentials (fallback)
